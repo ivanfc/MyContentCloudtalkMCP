@@ -1,0 +1,31 @@
+{
+  "name": "mycontent-cloudtalk-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "cf-typegen": "wrangler types",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "integration": "vitest run --config vitest.integration.config.ts"
+  },
+  "dependencies": {
+    "@cloudflare/workers-oauth-provider": "^1.2.3",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@modelcontextprotocol/server": "2.0.0",
+    "agents": "^0.24.0",
+    "hono": "^4.13.12",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3",
+    "wrangler": "^4.149.0"
+  },
+  "overrides": {
+    "@modelcontextprotocol/sdk": "$@modelcontextprotocol/sdk",
+    "@modelcontextprotocol/client": "2.3.1"
+  }
+}

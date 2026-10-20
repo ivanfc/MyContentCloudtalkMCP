@@ -1,0 +1,100 @@
+name: CI / Deploy
+
+# PR: catálogo reproducible + type-check + tests + empaquetado. Push a main: lo mismo → deploy (solo si pasa) → comprobación del endpoint.
+# Los secretos del Worker (GOOGLE_OAUTH_*, COOKIE_ENCRYPTION_KEY) NO se sincronizan desde GitHub: viven solo en
+# Cloudflare (wrangler secret put). `wrangler deploy` conserva los existentes. Cambiar COOKIE_ENCRYPTION_KEY
+# invalida las cookies de aprobación y los seudónimos de usuario (planes y auditoría quedan huérfanos).
+# Manual: integración de solo lectura contra una cuenta de CloudTalk de prueba (secretos CLOUDTALK_TEST_*).
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_integration:
+        description: "Integración contra la cuenta de prueba (solo lectura)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: El catálogo corresponde exactamente al OpenAPI versionado
+        run: |
+          node scripts/build-catalog.mjs
+          git diff --exit-code src/cloudtalk/catalog.json
+      - run: npm run type-check
+      - run: npm test
+      - name: Empaqueta el Worker (sin desplegar)
+        run: npx wrangler deploy --dry-run --outdir dist
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Comprobar secretos y configuración de despliegue
+        run: |
+          missing=""
+          for n in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            [ -z "${!n}" ] && missing="$missing $n"
+          done
+          if [ -n "$missing" ]; then echo "Faltan secretos de GitHub:$missing"; exit 1; fi
+          if grep -q "REPLACE_WITH_" wrangler.jsonc; then echo "wrangler.jsonc tiene IDs de KV sin rellenar (ver README, Puesta en marcha)"; exit 1; fi
+      - name: Deploy Worker
+        run: npx wrangler deploy
+      - name: Comprobar endpoint
+        run: |
+          set -euo pipefail
+          url="https://cloudtalk-mcp.mycontent.academy"
+          # El dominio propio puede tardar unos minutos en tener certificado tras el primer deploy.
+          for i in $(seq 1 18); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$url/mcp" -H 'content-type: application/json' -d '{}' || true)
+            [ "$code" = "401" ] && break
+            echo "intento $i: /mcp -> $code; reintento en 10 s"; sleep 10
+          done
+          echo "/mcp sin token -> $code"; test "$code" = "401"
+          curl -sf "$url/.well-known/oauth-protected-resource"; echo
+          curl -sf "$url/.well-known/oauth-authorization-server" > /dev/null
+          curl -sf "$url/privacy" | grep -q "disconnect_cloudtalk"
+
+  integration:
+    needs: test
+    if: github.event_name == 'workflow_dispatch' && inputs.run_integration
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      CLOUDTALK_TEST_KEY_ID: ${{ secrets.CLOUDTALK_TEST_KEY_ID }}
+      CLOUDTALK_TEST_SECRET: ${{ secrets.CLOUDTALK_TEST_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run integration

@@ -1,0 +1,4 @@
+# Copia a .dev.vars para `wrangler dev`. En producción usa `wrangler secret put`.
+GOOGLE_OAUTH_CLIENT_ID=
+GOOGLE_OAUTH_CLIENT_SECRET=
+COOKIE_ENCRYPTION_KEY=
