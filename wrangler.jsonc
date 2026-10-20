@@ -21,9 +21,9 @@
 	},
 	"kv_namespaces": [
 		// Estado del proveedor OAuth (clientes, grants cifrados con la clave de CloudTalk, tokens) y sesiones de registro.
-		{ "binding": "OAUTH_KV", "id": "REPLACE_WITH_OAUTH_KV_ID" },
+		{ "binding": "OAUTH_KV", "id": "b13c54c66e4a419bad6dfe8761dfca9b" },
 		// Planes (cifrados por usuario, TTL 24 h / 2 h) y auditoría (12 meses).
-		{ "binding": "STATE_KV", "id": "REPLACE_WITH_STATE_KV_ID" }
+		{ "binding": "STATE_KV", "id": "c6b45876e05242e698c6a2b3995744c9" }
 	],
 	"vars": {
 		// Abierto a cualquier cuenta de Google con email verificado: cada uno solo opera con SU clave de CloudTalk.

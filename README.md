@@ -69,11 +69,7 @@ Call flows/IVR/horarios/colas, comprar o portar números, crear o borrar grupos,
 
 Pasos manuales (requieren las cuentas de Iván; no se pueden hacer desde el repo):
 
-1. **KV**: crear dos namespaces y poner sus IDs en `wrangler.jsonc` (sustituyen `REPLACE_WITH_*`; el deploy de la CI falla mientras sigan ahí):
-   ```bash
-   npx wrangler kv namespace create mycontent-cloudtalk-mcp-OAUTH_KV
-   npx wrangler kv namespace create mycontent-cloudtalk-mcp-STATE_KV
-   ```
+1. **KV**: creados el 20-10-2026 (`mycontent-cloudtalk-mcp-OAUTH_KV` `b13c54c66e4a419bad6dfe8761dfca9b`, `mycontent-cloudtalk-mcp-STATE_KV` `c6b45876e05242e698c6a2b3995744c9`) y ya puestos en `wrangler.jsonc`.
 2. **Google OAuth** (el mismo cliente «MyContent Connect» que Sendy o uno nuevo): añadir el redirect URI `https://cloudtalk-mcp.mycontent.academy/callback` (y `http://localhost:8790/callback` para `wrangler dev`). Scopes: `openid email profile`.
 3. **Secretos del Worker** (solo en Cloudflare; la CI no los sincroniza):
    ```bash
