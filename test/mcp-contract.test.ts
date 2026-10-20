@@ -103,9 +103,9 @@ describe("contrato MCP real (cliente y servidor del SDK)", () => {
 			expect(fake.calls[0].url).toContain("date_from=2026-10-01+00%3A00%3A00");
 			expect(fake.calls[0].url).toContain("date_to=2026-10-03+23%3A59%3A59");
 			const f = await call("find_contacts", { keyword: "acme" });
-			expect(f.json.contacts).toEqual([{ id: "100", name: "Cliente Uno", company: "ACME", title: null, phones: ["+34600111222"], emails: ["uno@acme.com"], tags: ["VIP"] }]);
+			expect(f.json.contacts).toEqual([{ id: "100", name: "Cliente Uno", company: "ACME", title: null, phones: ["+34600111222"], emails: ["uno@acme.com"], tags: null }]);
 			const g = await call("get_contact", { contact_id: "100" });
-			expect(g.json).toMatchObject({ contact: { Contact: { id: "100" } }, notes: [{ ContactNote: { note: "Llamar el lunes" } }] });
+			expect(g.json).toMatchObject({ contact: { Contact: { id: "100" }, Tag: [{ name: "VIP" }] }, notes: [{ ContactNote: { note: "Llamar el lunes" } }] });
 			const sms = await call("plan_send_sms", { sender: "+34999999999", recipients: ["+34600000001"], message: "Hola" });
 			expect(sms).toMatchObject({ isError: true, json: { ok: false, stage: "guards" } });
 			const caps = await call("get_capabilities");

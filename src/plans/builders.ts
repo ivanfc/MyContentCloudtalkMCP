@@ -196,6 +196,7 @@ interface ContactShow {
 	Contact?: Record<string, unknown>;
 	ContactNumber?: { public_number?: string | number }[];
 	ContactEmail?: { email?: string }[];
+	Tag?: { name?: string }[];
 	ContactsTag?: { name?: string }[];
 }
 
@@ -215,7 +216,7 @@ export async function buildUpdateContactPlan(client: CloudTalkClient, env: Recor
 	if (!cur.Contact) throw new PlanRejected(`No existe el contacto ${contactId} en tu cuenta de CloudTalk.`);
 	const curPhones = (cur.ContactNumber ?? []).map((n) => `+${digits(n.public_number)}`).filter((p) => p !== "+");
 	const curEmails = (cur.ContactEmail ?? []).map((e) => normalizeEmail(e.email ?? "")).filter(Boolean);
-	const curTags = (cur.ContactsTag ?? []).map((t) => String(t.name ?? "")).filter(Boolean);
+	const curTags = (cur.Tag ?? cur.ContactsTag ?? []).map((t) => String(t.name ?? "")).filter(Boolean);
 
 	const body: Record<string, unknown> = {};
 	const changes: string[] = [];

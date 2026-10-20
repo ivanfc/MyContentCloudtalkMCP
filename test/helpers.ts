@@ -67,10 +67,15 @@ export class FakeCloudTalk {
 			({ url }) => {
 				const kw = (url.searchParams.get("keyword") ?? "").toLowerCase();
 				const items = [...this.contacts.values()].filter((c) => !kw || JSON.stringify(c).toLowerCase().includes(kw));
-				return page(items, url);
+				return page(items.map(({ ContactsTag: _tags, ...contact }) => contact), url);
 			},
 		],
-		["GET", /^\/api\/contacts\/show\/(\d+)\.json$/, ({ params }) => (this.contacts.has(params[0]) ? core(this.contacts.get(params[0])) : core({ status: 404, message: "Not Found" }, 404))],
+		["GET", /^\/api\/contacts\/show\/(\d+)\.json$/, ({ params }) => {
+			const contact = this.contacts.get(params[0]);
+			if (!contact) return core({ status: 404, message: "Not Found" }, 404);
+			const { ContactsTag, ...fields } = contact;
+			return core({ ...fields, Tag: ContactsTag });
+		}],
 		[
 			"PUT",
 			/^\/api\/contacts\/add\.json$/,

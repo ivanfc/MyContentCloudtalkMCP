@@ -314,7 +314,7 @@ export class CloudTalkTools {
 
 		this.tool(
 			"find_contacts",
-			"Busca contactos de CloudTalk por palabra clave (nombre, empresa, teléfono…), etiqueta, país o sector. Devuelve id, nombre, empresa, teléfonos, emails y etiquetas.",
+			"Busca contactos de CloudTalk por palabra clave (nombre, empresa, teléfono…), etiqueta, país o sector. Devuelve id, nombre, empresa, teléfonos y emails. El listado no incluye las etiquetas de cada contacto; usa get_contact para verlas.",
 			{
 				keyword: z.string().max(200).optional(),
 				tag_id: idParam.optional(),
@@ -332,6 +332,7 @@ export class CloudTalkTools {
 					truncated: r.truncated,
 					contacts: r.items.map((x) => {
 						const c = x.Contact ?? x;
+						const tagRows = x.Tag ?? x.ContactsTag ?? c.tags;
 						return {
 							id: String(c.id),
 							name: c.name,
@@ -339,7 +340,7 @@ export class CloudTalkTools {
 							title: c.title ?? null,
 							phones: (x.ContactNumber ?? c.contact_numbers ?? []).map((n: any) => `+${String(n?.public_number ?? n).replace(/\D/g, "")}`),
 							emails: (x.ContactEmail ?? c.contact_emails ?? []).map((e: any) => e?.email ?? e),
-							tags: (x.ContactsTag ?? c.tags ?? []).map((t: any) => t?.name ?? t),
+							tags: Array.isArray(tagRows) ? tagRows.map((t: any) => t?.name ?? t) : null,
 						};
 					}),
 				};
