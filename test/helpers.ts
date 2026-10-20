@@ -147,7 +147,7 @@ export class FakeCloudTalk {
 	fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
 		const url = new URL(String(input));
 		const method = (init?.method ?? "GET").toUpperCase();
-		const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+		const body = init?.body instanceof FormData ? init.body : init?.body ? JSON.parse(String(init.body)) : undefined;
 		const auth = new Headers(init?.headers).get("authorization");
 		this.calls.push({ method, url: url.toString(), body, auth });
 		const expected = `Basic ${btoa(`${this.keyId}:${this.secret}`)}`;

@@ -6,13 +6,13 @@ import { createMcpHandler, getMcpAuthContext } from "agents/mcp/server";
 import { z } from "zod";
 import { AuthHandler, type Props } from "./auth/handler";
 import { CATALOG, CatalogError, brief, isRead, requireOperation, searchOperations, tags, unsupportedReason } from "./cloudtalk/catalog";
-import { CloudTalkClient, collectCorePages, collectCursorPages } from "./cloudtalk/client";
+import { CloudTalkClient, collectCorePages, collectCursorPages, isAudioData } from "./cloudtalk/client";
 import { type ErrorInfo, errorInfo } from "./cloudtalk/errors";
 import { validateCall } from "./cloudtalk/validate";
 import { isEmailAllowed } from "./config";
 import { INSIGHT_PARTS, accountOverview, callInsights, callReport, listCalls } from "./features";
-import { PlanRejected, buildApiCallPlan, buildCreateContactPlan, buildMakeCallPlan, buildSendSmsPlan, buildUpdateContactPlan, limitsFrom } from "./plans/builders";
-import { type Deps, type PlanDraft, applyPlan, cancelPlan, clipData, confirmPhrase, deleteAllPlans, getAuditLog, listPendingPlans, loadPlan, savePlan } from "./plans/engine";
+import { PlanRejected, buildApiCallPlan, buildCreateContactPlan, buildMakeCallPlan, buildSendSmsPlan, buildUpdateContactPlan, buildUploadKnowledgeBaseFilePlan, limitsFrom } from "./plans/builders";
+import { type Deps, type PlanDraft, applyPlan, cancelPlan, clipData, confirmPhrase, deleteAllPlans, getAuditLog, listPendingPlans, loadPlan, publicStepBody, savePlan } from "./plans/engine";
 import { assessRisk } from "./plans/policy";
 import type { UsageQuota } from "./quota";
 import { type Usage, quotaConfig } from "./quota-policy";
@@ -23,7 +23,11 @@ export { UsageQuota } from "./quota";
 
 export const VERSION = "0.1.0";
 
-type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
+type ToolResult = { content: ({ type: "text"; text: string } | { type: "audio"; data: string; mimeType: string })[]; isError?: boolean };
+
+class DirectResult {
+	constructor(readonly result: ToolResult) {}
+}
 
 const CATEGORY_LABEL: Record<string, string> = {
 	credential: "Falla la clave API de CloudTalk",
@@ -186,7 +190,7 @@ export class CloudTalkTools {
 					console.log(JSON.stringify({ evt: "tool_call", tool: name, user: await this.userKey().catch(() => "?"), outcome, ms: Date.now() - started, ...(code ? { code } : {}) }));
 				try {
 					const data = await handler(args);
-					const result = ok(data);
+					const result = data instanceof DirectResult ? data.result : ok(data);
 					await log(result.isError ? "rejected" : "ok", result.isError ? String((data as { outcome?: string; stage?: string })?.outcome ?? (data as { stage?: string })?.stage ?? "not_ok") : undefined);
 					return result;
 				} catch (e) {
@@ -222,7 +226,7 @@ export class CloudTalkTools {
 						operation: op.id,
 						area: op.tag,
 						kind: isRead(op) ? "read" : "write",
-						use_with: isRead(op) ? "api_read" : "plan_api_call",
+						use_with: op.id === "upload_knowledge_base_file" ? "plan_upload_knowledge_base_file" : isRead(op) ? "api_read" : "plan_api_call",
 						method: op.method,
 						url: `${op.host}${op.path}`,
 						summary: op.summary,
@@ -241,7 +245,7 @@ export class CloudTalkTools {
 
 		this.tool(
 			"api_read",
-			"Ejecuta CUALQUIER lectura (GET) de la API de CloudTalk por su id de operación (describe_api_operation). Valida parámetros contra el esquema oficial. all_pages=true recorre páginas (page/limit o cursor) hasta max_items. Devuelve la respuesta de CloudTalk (sin el sobre responseData) y el estado del límite de peticiones.",
+			"Ejecuta CUALQUIER lectura (GET) de la API de CloudTalk por su id de operación (describe_api_operation), incluidas grabaciones WAV como contenido de audio MCP (máximo 5 MB). Valida parámetros contra el esquema oficial. all_pages=true recorre páginas (page/limit o cursor) hasta max_items.",
 			{
 				operation: z.string().max(80),
 				path_params: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
@@ -267,6 +271,12 @@ export class CloudTalkTools {
 					return { operation: op.id, returned: r.items.length, truncated: r.truncated, pages_read: r.pages_read, items: r.items, rate_limit: client.lastRate ?? null };
 				}
 				const r = await client.call(op, { path: v.path, query: v.query });
+				if (isAudioData(r.data)) {
+					return new DirectResult({ content: [
+						{ type: "text", text: JSON.stringify({ operation: op.id, http_status: r.status, mime_type: r.data.mimeType, bytes: r.data.bytes, rate_limit: r.rate ?? null }) },
+						{ type: "audio", data: r.data.data, mimeType: r.data.mimeType },
+					] });
+				}
 				return { operation: op.id, http_status: r.status, data: r.data, rate_limit: r.rate ?? null, ...(op.id === "get_webhook_endpoint_secret" ? { warning: "Contiene el secreto de firma del webhook: no lo compartas fuera de su receptor." } : {}) };
 			},
 		);
@@ -373,14 +383,13 @@ export class CloudTalkTools {
 				return {
 					version: VERSION,
 					api: { source: CATALOG.source, version: CATALOG.api_version, spec_sha256: CATALOG.spec_sha256, operations: CATALOG.operation_count, areas: tags() },
-					coverage: "Todas las lecturas por api_read y todas las escrituras JSON por plan_api_call (validadas contra el esquema oficial). Herramientas curadas para lo frecuente.",
+					coverage: "Las 107 operaciones del OpenAPI: lecturas por api_read (WAV como audio MCP), escrituras JSON por plan_api_call y subida multipart por plan_upload_knowledge_base_file. Los ficheros tienen límite de 5 MB.",
 					not_executable: CATALOG.operations.filter((o) => unsupportedReason(o)).map((o) => ({ operation: o.id, reason: unsupportedReason(o) })),
 					not_in_cloudtalk_api: [
 						"Configurar call flows, IVR, horarios o colas (solo se puede cambiar a qué grupo/agente apunta un número)",
 						"Comprar, portar o dar de baja números en la facturación (numbers_clear solo desregistra el enrutado)",
 						"Crear o borrar grupos, cambiar roles o permisos de usuario, facturación y recargas",
 						"Estadísticas históricas agregadas oficiales: get_call_report las calcula a partir del historial de llamadas",
-						"Descargar audio de grabaciones (binario): usa get_call (enlace y transcripción)",
 					],
 					guards: {
 						two_phase: "plan_* → apply_plan con confirmación literal; plan de un solo uso; re-lectura del estado y aborto si cambió",
@@ -402,7 +411,7 @@ export class CloudTalkTools {
 
 		this.tool(
 			"plan_api_call",
-			`Plan para CUALQUIER escritura de la API de CloudTalk (PUT/POST/PATCH/DELETE) por su id de operación: valida path_params, query y body contra el esquema oficial (rechaza campos inventados salvo allow_undocumented_fields=true), lee el estado del objeto si existe (ANTES) y aplica la barrera de la operación. Consulta describe_api_operation antes. ${PLAN_NOTE}`,
+			`Plan para escrituras JSON de la API de CloudTalk (PUT/POST/PATCH/DELETE) por su id de operación: valida path_params, query y body contra el esquema oficial (rechaza campos inventados salvo allow_undocumented_fields=true), lee el estado del objeto si existe (ANTES) y aplica la barrera de la operación. Para upload_knowledge_base_file usa plan_upload_knowledge_base_file. ${PLAN_NOTE}`,
 			{
 				operation: z.string().max(80),
 				path_params: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
@@ -411,6 +420,17 @@ export class CloudTalkTools {
 				allow_undocumented_fields: z.boolean().default(false).describe("true solo si sabes que la API acepta un campo que el OpenAPI no documenta: se envía con aviso"),
 			},
 			async (a) => this.plan(({ client, env }) => buildApiCallPlan(client, env, a)),
+		);
+
+		this.tool(
+			"plan_upload_knowledge_base_file",
+			`Prepara upload_knowledge_base_file por multipart/form-data. Recibe un fichero de hasta 5 MB en base64 estándar y conserva los bytes solo en el plan cifrado; el resumen muestra nombre, tamaño y SHA-256. CloudTalk deriva el nombre de la base de conocimiento del fichero. ${PLAN_NOTE}`,
+			{
+				filename: z.string().min(1).max(128),
+				content_base64: z.string().min(4).describe("Contenido binario del fichero codificado en base64 estándar"),
+				mime_type: z.string().max(100).optional().describe("Tipo MIME; por defecto application/octet-stream"),
+			},
+			async (a) => this.plan(({ env }) => buildUploadKnowledgeBaseFilePlan(env, a)),
 		);
 
 		const contactFields = {
@@ -497,7 +517,7 @@ export class CloudTalkTools {
 			async ({ plan_id }) => {
 				const p = await loadPlan((await this.services()).deps, plan_id.trim());
 				if (!p) return { ok: false, message: "El plan no existe, ha caducado o no es tuyo." };
-				return { plan_id: p.id, kind: p.kind, summary: p.summary, warnings: p.warnings, elevated: p.elevated, confirm_with: confirmPhrase(p.id, p.elevated), expires_at_utc: new Date(p.expiresAt).toISOString(), api_calls: p.action.steps.map((s) => ({ operation: s.op, label: s.label, path_params: s.path, query: s.query, body: clipData(s.body, 3000) })) };
+				return { plan_id: p.id, kind: p.kind, summary: p.summary, warnings: p.warnings, elevated: p.elevated, confirm_with: confirmPhrase(p.id, p.elevated), expires_at_utc: new Date(p.expiresAt).toISOString(), api_calls: p.action.steps.map((s) => ({ operation: s.op, label: s.label, path_params: s.path, query: s.query, body: clipData(publicStepBody(s), 3000) })) };
 			},
 		);
 

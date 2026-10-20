@@ -18,6 +18,13 @@ export interface Step {
 	body?: unknown;
 }
 
+/** Nunca devolver el contenido base64 del fichero al chat ni al registro de auditoría. */
+export function publicStepBody(step: Step): unknown {
+	if (step.op !== "upload_knowledge_base_file") return step.body;
+	const file = (step.body as { file?: { filename?: string; mime_type?: string } } | undefined)?.file;
+	return { file: { filename: file?.filename, mime_type: file?.mime_type, content: "[cifrado en el plan]" } };
+}
+
 /** Estado leído al crear el plan: se vuelve a leer al aplicar y, si cambió, el plan se aborta. */
 export interface StateCheck {
 	read: StateRead;
@@ -122,7 +129,7 @@ export async function savePlan(deps: Deps, draft: PlanDraft) {
 		elevated,
 		summary: plan.summary,
 		warnings: plan.warnings,
-		api_calls: plan.action.steps.map((s) => ({ operation: s.op, label: s.label, ...(s.path && Object.keys(s.path).length ? { path_params: s.path } : {}), ...(s.query && Object.keys(s.query).length ? { query: s.query } : {}), ...(s.body !== undefined ? { body: s.body } : {}) })),
+		api_calls: plan.action.steps.map((s) => ({ operation: s.op, label: s.label, ...(s.path && Object.keys(s.path).length ? { path_params: s.path } : {}), ...(s.query && Object.keys(s.query).length ? { query: s.query } : {}), ...(s.body !== undefined ? { body: publicStepBody(s) } : {}) })),
 		...(draft.extra ?? {}),
 		note: "Nada se ha cambiado todavía. Enseña este resumen al usuario y aplica solo con su aprobación explícita usando exactamente confirm_with.",
 	};

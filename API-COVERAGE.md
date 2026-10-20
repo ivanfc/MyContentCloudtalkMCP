@@ -3,9 +3,9 @@
 Fuente: https://help.cloudtalk.io/api-reference/openapi.json (OpenAPI 1.7, sha256 `184b4fa8613dbf9047fc6b51123afb65d2d981b944077e6b76b211f7e264d964`). Copia versionada en `spec/cloudtalk-openapi.json`.
 Generado con `node scripts/coverage-md.mjs` a partir de `src/cloudtalk/catalog.json` (que la CI regenera desde el spec y compara).
 
-**107 operaciones.** Toda lectura es ejecutable con `api_read` y toda escritura JSON con `plan_api_call` → `apply_plan`, validadas contra el esquema oficial. La columna «Curada» indica la herramienta específica cuando existe.
+**107 operaciones.** Toda lectura es ejecutable con `api_read` (WAV como audio MCP) y las escrituras con `plan_api_call` o `plan_upload_knowledge_base_file` → `apply_plan`, validadas contra el esquema oficial. Los ficheros tienen un límite de 5 MB. La columna «Curada» indica la herramienta específica cuando existe.
 
-Barrera: **E** = APPLY-ELEVATED siempre · **E\*** = APPLY-ELEVATED según el body · **A** = APPLY · **L** = lectura (sin plan) · **✗** = no ejecutable por el conector.
+Barrera: **E** = APPLY-ELEVATED siempre · **E\*** = APPLY-ELEVATED según el body · **A** = APPLY · **L** = lectura (sin plan).
 
 
 ## CueCard (1)
@@ -97,7 +97,7 @@ Barrera: **E** = APPLY-ELEVATED siempre · **E\*** = APPLY-ELEVATED según el bo
 |---|---|---|---|---|
 | `calls_index` | GET `my.cloudtalk.io/api/calls/index.json` | Call history | L | list_calls, get_call_report, get_contact |
 | `calls_details` | GET `analytics-api.cloudtalk.io/api/calls/{callId}` | Get call details | L | get_call (details) |
-| `calls_recording` | GET `my.cloudtalk.io/api/calls/recording/{callId}.json` | Recording media | ✗ audio binario: usar get_call |  |
+| `calls_recording` | GET `my.cloudtalk.io/api/calls/recording/{callId}.json` | Recording media | L | api_read (audio MCP, hasta 5 MB) |
 | `recordings_delete` | DELETE `my.cloudtalk.io/api/recordings/delete/{callId}.json` | Delete call recording | E |  |
 | `calls_create` | POST `my.cloudtalk.io/api/calls/create.json` | Make a call | A | plan_make_call |
 | `statistics_realtime_groups` | GET `my.cloudtalk.io/api/statistics/realtime/groups.json` | Group statistics | L | get_account_overview |
@@ -138,7 +138,7 @@ Barrera: **E** = APPLY-ELEVATED siempre · **E\*** = APPLY-ELEVATED según el bo
 | `detach_voice_agent_knowledge_base` | DELETE `api.cloudtalk.io/v1/voice-agents/{voiceAgentId}/knowledge-bases/{knowledgeBaseId}` | Detach a knowledge base from a voice agent | A |  |
 | `list_knowledge_bases` | GET `api.cloudtalk.io/v1/knowledge-bases` | List knowledge bases | L |  |
 | `create_knowledge_base` | POST `api.cloudtalk.io/v1/knowledge-bases` | Create a knowledge base | A |  |
-| `upload_knowledge_base_file` | POST `api.cloudtalk.io/v1/knowledge-bases/files` | Upload a knowledge base file | ✗ multipart: usar create_knowledge_base (text/url) |  |
+| `upload_knowledge_base_file` | POST `api.cloudtalk.io/v1/knowledge-bases/files` | Upload a knowledge base file | E | plan_upload_knowledge_base_file (multipart, hasta 5 MB) |
 | `delete_knowledge_base` | DELETE `api.cloudtalk.io/v1/knowledge-bases/{knowledgeBaseId}` | Delete a knowledge base | E |  |
 
 ## Dialer (27)

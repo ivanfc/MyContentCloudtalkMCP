@@ -28,7 +28,7 @@ describe('stateless MCP HTTP transport', () => {
   expect(json.result.serverInfo).toMatchObject({ name: 'MyContent CloudTalk MCP', version: '0.1.0' });
  });
  it('lists all tools and executes independent calls without prior session storage', async () => {
-  const listing = await rpc('tools/list'); expect(listing.response.status, JSON.stringify(listing.json)).toBe(200); expect(listing.json.result.tools).toHaveLength(22);
+  const listing = await rpc('tools/list'); expect(listing.response.status, JSON.stringify(listing.json)).toBe(200); expect(listing.json.result.tools).toHaveLength(23);
   const ops = ['contacts_add', 'dialer_patch_campaign'];
   const results = await Promise.all(['a@example.test', 'b@example.test'].map((email, i) => rpc('tools/call', { name: 'describe_api_operation', arguments: { operation: ops[i] } }, email)));
   for (const [i, result] of results.entries()) {

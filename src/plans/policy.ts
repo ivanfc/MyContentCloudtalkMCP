@@ -75,6 +75,9 @@ export function assessRisk(op: Operation, body: unknown, before?: unknown): Risk
 		case "create_webhook_endpoint":
 			r.elevated.push("Crea un webhook: CloudTalk enviará datos de llamadas y contactos (datos personales) a una URL externa.");
 			break;
+		case "upload_knowledge_base_file":
+			r.elevated.push("Sube un archivo a CloudTalk y lo incorpora a una base de conocimiento. Comprueba su contenido antes de confirmar.");
+			break;
 		case "update_webhook_endpoint":
 			if ("url" in b || "eventTypes" in b || b.enabled === true) r.elevated.push("Cambia la URL, los eventos o reactiva un webhook: envío de datos personales a un sistema externo.");
 			break;

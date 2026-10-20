@@ -75,14 +75,10 @@ export class CatalogError extends Error {
 
 export const isRead = (op: Operation) => op.method === "GET";
 
-/** Operaciones que este conector no puede ejecutar y por qué (no se simulan). */
+/** Tipos que el transporte del conector todavía no reconoce. */
 export function unsupportedReason(op: Operation): string | undefined {
-	if (op.body_content_type && op.body_content_type !== "application/json") {
-		return `Requiere subir un fichero (${op.body_content_type}); el MCP solo envía JSON. Alternativa: crea la base de conocimiento con create_knowledge_base (sourceType text o url).`;
-	}
-	if (op.response_content_type && !/json/.test(op.response_content_type)) {
-		return `Devuelve un fichero binario (${op.response_content_type}), que no se puede mostrar en el chat. Alternativas: calls_details (enlace de la grabación) o ai_calls_transcription (transcripción).`;
-	}
+	if (op.body_content_type && !["application/json", "multipart/form-data"].includes(op.body_content_type)) return `Body ${op.body_content_type} no admitido.`;
+	if (op.response_content_type && !/json|^audio\//.test(op.response_content_type)) return `Respuesta ${op.response_content_type} no admitida.`;
 	return undefined;
 }
 

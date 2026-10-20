@@ -16,7 +16,7 @@ describe("barreras por operación", () => {
 	});
 	it("la lista de operaciones siempre reforzadas coincide con API-COVERAGE.md (scripts/coverage-md.mjs)", () => {
 		const always = CATALOG.operations.filter((o) => o.method !== "GET" && assessRisk(o, {}).elevated.length).map((o) => o.id).sort();
-		expect(always).toEqual(["activity_delete", "agents_add", "agents_delete", "blacklist_delete", "campaigns_delete", "contacts_delete", "create_voice_agent_call", "create_webhook_endpoint", "delete_knowledge_base", "delete_voice_agent", "delete_webhook_endpoint", "dialer_delete_campaign", "notes_delete", "numbers_clear", "numbers_edit", "recordings_delete", "rotate_webhook_endpoint_secret", "sms_send", "tags_delete"]);
+		expect(always).toEqual(["activity_delete", "agents_add", "agents_delete", "blacklist_delete", "campaigns_delete", "contacts_delete", "create_voice_agent_call", "create_webhook_endpoint", "delete_knowledge_base", "delete_voice_agent", "delete_webhook_endpoint", "dialer_delete_campaign", "notes_delete", "numbers_clear", "numbers_edit", "recordings_delete", "rotate_webhook_endpoint_secret", "sms_send", "tags_delete", "upload_knowledge_base_file"]);
 	});
 	it("cambios corrientes y desvinculaciones van con APPLY normal", () => {
 		for (const id of ["contacts_add", "contacts_edit", "contacts_remove_tags", "groups_delete", "notes_add", "tags_add", "dialer_create_script", "dialer_archive_script", "detach_voice_agent_knowledge_base", "calls_create", "kill_voice_agent_outbound", "cuecards_create", "blacklist_add"])
@@ -61,7 +61,7 @@ describe("plan_api_call", () => {
 		const deps = makeDeps(fake);
 		await expect(buildApiCallPlan(deps.client, env, { operation: "calls_index" })).rejects.toThrow(/solo lectura: usa api_read/);
 		await expect(buildApiCallPlan(deps.client, env, { operation: "tags_add", body: { name: "x", color: "red" } })).rejects.toMatchObject({ details: { errors: [expect.stringMatching(/body\.color/)] } });
-		await expect(buildApiCallPlan(deps.client, env, { operation: "upload_knowledge_base_file", body: {} })).rejects.toThrow(/fichero/);
+		await expect(buildApiCallPlan(deps.client, env, { operation: "upload_knowledge_base_file", body: {} })).rejects.toThrow(/plan_upload_knowledge_base_file/);
 		await expect(buildApiCallPlan(deps.client, { HARD_BLOCKED_OPERATIONS: "sms_send" }, { operation: "sms_send", body: { sender: "+1", recipient: "+2", message: "x" } })).rejects.toThrow(/bloqueada/);
 		await expect(buildApiCallPlan(deps.client, { HARD_BLOCKED_OPERATIONS: "tag:Webhooks" }, { operation: "create_webhook_endpoint", body: { url: "https://x.com" } })).rejects.toThrow(/bloqueada/);
 	});
