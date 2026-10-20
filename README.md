@@ -7,7 +7,7 @@ Servidor MCP remoto para que cualquier usuario gestione **su propia cuenta de [C
 - Patrón de planes en dos fases similar a [MyContentGoogleMCP](https://github.com/ivanfc/MyContentGoogleMCP) y MCP-Sendy: confirmación literal, re-lectura del estado antes de aplicar, cerrojo contra doble aplicación, auditoría por usuario, cuota diaria en un Durable Object y logs JSON sin datos personales. Este MCP tiene Worker, KV, cliente OAuth y token de despliegue propios.
 - Cobertura: **las 107 operaciones** del OpenAPI oficial de CloudTalk (v1.7). Ver [API-COVERAGE.md](API-COVERAGE.md).
 
-Estado: **0.1.0**. 61 tests unitarios con CloudTalk simulado. **No se ha probado todavía contra una cuenta real** (ver «Validación pendiente»).
+Estado: **0.1.0**. 61 tests unitarios y 3 pruebas de integración de solo lectura superadas contra una cuenta real el 20-10-2026 (ver «Validado»).
 
 ## Cómo funciona el acceso (multiusuario)
 
@@ -67,7 +67,7 @@ Call flows/IVR/horarios/colas, comprar o portar números, crear o borrar grupos,
 
 ## Puesta en marcha
 
-Pasos manuales (requieren las cuentas de Iván; no se pueden hacer desde el repo):
+Configuración de la instancia de MyContent, completada el 20-10-2026:
 
 1. **KV**: creados el 20-10-2026 (`mycontent-cloudtalk-mcp-OAUTH_KV` `b13c54c66e4a419bad6dfe8761dfca9b`, `mycontent-cloudtalk-mcp-STATE_KV` `c6b45876e05242e698c6a2b3995744c9`) y ya puestos en `wrangler.jsonc`.
 2. **Google OAuth**: usar el cliente web propio «MyContent CloudTalk MCP» del proyecto Google Cloud «MyContent», separado del cliente de Sendy. Sus URI de redirección son `https://cloudtalk-mcp.mycontent.academy/callback` y `http://localhost:8790/callback` (para `wrangler dev`). Scopes: `openid email profile`.
@@ -93,8 +93,11 @@ npx wrangler dev               # requiere .dev.vars (ver .dev.vars.example)
 CLOUDTALK_TEST_KEY_ID=... CLOUDTALK_TEST_SECRET=... npm run integration   # cuenta real, solo lectura (~10 peticiones)
 ```
 
-## Validación pendiente
+## Validado
 
-- **Ninguna llamada real a CloudTalk todavía**: el entorno de desarrollo no tenía salida a `*.cloudtalk.io` ni una clave. Todo lo verificado es contra el OpenAPI oficial y un CloudTalk simulado que reproduce sus sobres y errores documentados.
-- Primero: `npm run integration` con una clave real (solo lectura). Después, una escritura reversible de prueba (crear y borrar una etiqueta de contacto) desde Claude.
-- Inferencias a confirmar con la cuenta real: zona horaria de `date_from`/`date_to` en `calls_index` (la doc dice que las fechas devueltas son UTC; el filtro se envía tal cual), forma exacta de la respuesta de `contacts_index` y de los errores de Conversation Intelligence cuando no está contratado, y si `contacts_edit` sin listas conserva teléfonos y emails (la doc de `bulk_contacts` dice que solo se actualiza lo enviado).
+- **Integración real:** `npm run integration` con una clave exclusiva «MyContent CloudTalk MCP - test»: 3/3 pruebas superadas. La clave no está en el repositorio.
+- **Fechas de llamadas:** una llamada conocida del historial apareció con el filtro `date_from`/`date_to` centrado en su `started_at` UTC; las ventanas desplazadas −2 y +2 horas no la devolvieron. En esta cuenta, el filtro se interpreta en UTC.
+- **Contactos:** `contacts_index` devuelve filas con `Contact`, `ContactNumber`, `ContactEmail` y `ContactAttribute`, sin etiquetas por fila (incluso filtrando por etiqueta). `contacts_show` devuelve `Contact`, `ExternalUrl`, `ContactNumber`, `ContactEmail`, `Tag` y `ContactAttribute`; `Tag` contiene objetos con `name`. `find_contacts.tags` es `null` cuando el listado no incluye etiquetas; `get_contact` permite consultarlas. `plan_update_contact` lee `Tag` para evitar duplicados y detectar eliminaciones.
+- **Conversation Intelligence:** CloudTalk indica en esta cuenta que las llamadas de agentes humanos requieren CI y no se procesan. `/v1/ai/calls/{id}/summary` respondió HTTP 404 con código `NOT_FOUND` en una llamada reciente y en otra grabada.
+- **Edición de contacto:** se creó un contacto temporal con teléfono y email ficticios (HTTP 201), se editó solo `title` (HTTP 200) y ambos campos siguieron presentes al releerlo. Se borró el contacto (HTTP 200) y su consulta posterior devolvió 404.
+- **Claude:** el cliente OAuth propio completó `/setup`; el conector figura conectado y `check_connection` funcionó desde Claude. La etiqueta temporal `MCP_TEST` se creó por `plan_api_call` → `apply_plan` (HTTP 201) y se borró por otro plan `APPLY-ELEVATED` (HTTP 200). La lectura posterior de etiquetas confirmó que no existe.
