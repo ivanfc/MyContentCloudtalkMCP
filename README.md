@@ -4,7 +4,7 @@ Servidor MCP remoto para que cualquier usuario gestione **su propia cuenta de [C
 
 - URL del conector: `https://cloudtalk-mcp.mycontent.academy/mcp` (Streamable HTTP; `/sse` heredado).
 - Cloudflare Workers + `McpAgent` (Durable Object) + OAuth 2.1 (`@cloudflare/workers-oauth-provider`) con login de Google.
-- Mismo patrón que [MyContentGoogleMCP](https://github.com/ivanfc/MyContentGoogleMCP) y MCP-Sendy: planes en dos fases con confirmación literal, re-lectura del estado antes de aplicar, cerrojo contra doble aplicación, auditoría por usuario, cuota diaria en un Durable Object y logs JSON sin datos personales.
+- Patrón de planes en dos fases similar a [MyContentGoogleMCP](https://github.com/ivanfc/MyContentGoogleMCP) y MCP-Sendy: confirmación literal, re-lectura del estado antes de aplicar, cerrojo contra doble aplicación, auditoría por usuario, cuota diaria en un Durable Object y logs JSON sin datos personales. Este MCP tiene Worker, KV, cliente OAuth y token de despliegue propios.
 - Cobertura: **las 107 operaciones** del OpenAPI oficial de CloudTalk (v1.7). Ver [API-COVERAGE.md](API-COVERAGE.md).
 
 Estado: **0.1.0**. 61 tests unitarios con CloudTalk simulado. **No se ha probado todavía contra una cuenta real** (ver «Validación pendiente»).
