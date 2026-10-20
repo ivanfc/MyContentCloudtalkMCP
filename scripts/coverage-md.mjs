@@ -10,6 +10,7 @@ const CURATED = {
 	statistics_realtime_groups: "get_account_overview",
 	calls_index: "list_calls, get_call_report, get_contact",
 	calls_details: "get_call (details)",
+	calls_recording: "api_read (audio MCP, hasta 5 MB)",
 	ai_calls_summary: "get_call (summary)",
 	ai_calls_overall_sentiment: "get_call (sentiment)",
 	ai_calls_talk_listen_ratio: "get_call (talk_listen_ratio)",
@@ -27,19 +28,19 @@ const CURATED = {
 	contacts_remove_tags: "plan_update_contact",
 	sms_send: "plan_send_sms",
 	calls_create: "plan_make_call",
+	upload_knowledge_base_file: "plan_upload_knowledge_base_file (multipart, hasta 5 MB)",
 };
-const ELEVATED = new Set(["agents_add", "agents_delete", "campaigns_delete", "contacts_delete", "notes_delete", "activity_delete", "numbers_edit", "numbers_clear", "blacklist_delete", "sms_send", "recordings_delete", "tags_delete", "create_voice_agent_call", "delete_voice_agent", "delete_knowledge_base", "dialer_delete_campaign", "create_webhook_endpoint", "delete_webhook_endpoint", "rotate_webhook_endpoint_secret"]);
+const ELEVATED = new Set(["agents_add", "agents_delete", "campaigns_delete", "contacts_delete", "notes_delete", "activity_delete", "numbers_edit", "numbers_clear", "blacklist_delete", "sms_send", "recordings_delete", "tags_delete", "create_voice_agent_call", "delete_voice_agent", "delete_knowledge_base", "dialer_delete_campaign", "create_webhook_endpoint", "delete_webhook_endpoint", "rotate_webhook_endpoint_secret", "upload_knowledge_base_file"]);
 const CONDITIONAL = { agents_edit: "si cambia email, salientes o límite de gasto", bulk_contacts: "si incluye borrados", campaigns_add: "si status=active", campaigns_edit: "si status=active", dialer_patch_campaign: "si status=active", update_webhook_endpoint: "si cambia url/eventos o reactiva" };
-const UNSUPPORTED = { calls_recording: "audio binario: usar get_call", upload_knowledge_base_file: "multipart: usar create_knowledge_base (text/url)" };
 
 let md = `# Cobertura de la API oficial de CloudTalk
 
 Fuente: ${cat.source} (OpenAPI ${cat.api_version}, sha256 \`${cat.spec_sha256}\`). Copia versionada en \`spec/cloudtalk-openapi.json\`.
 Generado con \`node scripts/coverage-md.mjs\` a partir de \`src/cloudtalk/catalog.json\` (que la CI regenera desde el spec y compara).
 
-**${cat.operation_count} operaciones.** Toda lectura es ejecutable con \`api_read\` y toda escritura JSON con \`plan_api_call\` → \`apply_plan\`, validadas contra el esquema oficial. La columna «Curada» indica la herramienta específica cuando existe.
+**${cat.operation_count} operaciones.** Toda lectura es ejecutable con \`api_read\` (WAV como audio MCP) y las escrituras con \`plan_api_call\` o \`plan_upload_knowledge_base_file\` → \`apply_plan\`, validadas contra el esquema oficial. Los ficheros tienen un límite de 5 MB. La columna «Curada» indica la herramienta específica cuando existe.
 
-Barrera: **E** = APPLY-ELEVATED siempre · **E\\*** = APPLY-ELEVATED según el body · **A** = APPLY · **L** = lectura (sin plan) · **✗** = no ejecutable por el conector.
+Barrera: **E** = APPLY-ELEVATED siempre · **E\\*** = APPLY-ELEVATED según el body · **A** = APPLY · **L** = lectura (sin plan).
 
 `;
 const byTag = new Map();
@@ -48,7 +49,7 @@ for (const [tag, ops] of byTag) {
 	md += `\n## ${tag} (${ops.length})\n\n| Operación | Método y ruta | Resumen | Barrera | Curada |\n|---|---|---|---|---|\n`;
 	for (const o of ops) {
 		const soft = ["contacts_remove_tags", "groups_delete", "detach_voice_agent_knowledge_base", "dialer_archive_script"].includes(o.id);
-		const g = UNSUPPORTED[o.id] ? `✗ ${UNSUPPORTED[o.id]}` : o.method === "GET" ? "L" : ELEVATED.has(o.id) ? "E" : CONDITIONAL[o.id] ? `E* (${CONDITIONAL[o.id]})` : o.method === "DELETE" && !soft ? "E" : "A";
+		const g = o.method === "GET" ? "L" : ELEVATED.has(o.id) ? "E" : CONDITIONAL[o.id] ? `E* (${CONDITIONAL[o.id]})` : o.method === "DELETE" && !soft ? "E" : "A";
 		md += `| \`${o.id}\` | ${o.method} \`${new URL(o.host).hostname}${new URL(o.host).pathname.replace(/\/$/, "")}${o.path}\` | ${o.summary} | ${g} | ${CURATED[o.id] ?? ""} |\n`;
 	}
 }

@@ -1,6 +1,7 @@
 import { type Operation, isRead, requireOperation, unsupportedReason } from "../cloudtalk/catalog";
 import { type CloudTalkClient, collectCorePages } from "../cloudtalk/client";
 import { validateCall } from "../cloudtalk/validate";
+import { parseUploadFile } from "../cloudtalk/binary";
 import { envInt } from "../config";
 import { emailProblem, normalizeEmail } from "../util/email";
 import { type PlanDraft, type StateCheck, type Step, readState } from "./engine";
@@ -59,6 +60,7 @@ export interface ApiCallArgs {
 /** Comprobaciones comunes de una escritura: existe, es escritura, se puede ejecutar, no está bloqueada y valida contra el esquema. */
 export function checkWrite(op: Operation, args: ApiCallArgs, env: Record<string, unknown>) {
 	if (isRead(op)) throw new PlanRejected(`${op.id} es de solo lectura: usa api_read (no necesita plan).`);
+	if (op.id === "upload_knowledge_base_file") throw new PlanRejected("upload_knowledge_base_file requiere plan_upload_knowledge_base_file para preparar el multipart sin mostrar el contenido en el resumen.");
 	const unsupported = unsupportedReason(op);
 	if (unsupported) throw new PlanRejected(`${op.id}: ${unsupported}`);
 	const blocked = hardBlocked(op, env as { HARD_BLOCKED_OPERATIONS?: string });
@@ -66,6 +68,29 @@ export function checkWrite(op: Operation, args: ApiCallArgs, env: Record<string,
 	const v = validateCall(op, { path_params: args.path_params, query: args.query, body: args.body }, !!args.allow_undocumented_fields);
 	if (v.errors.length) throw new PlanRejected(`Los datos no cumplen el esquema oficial de ${op.id}. Corrígelos (describe_api_operation("${op.id}") da los campos exactos).`, { errors: v.errors });
 	return v;
+}
+
+/** El fichero viaja cifrado en el plan; solo metadatos aparecen en el resumen y en preview_plan. */
+export async function buildUploadKnowledgeBaseFilePlan(env: Record<string, unknown>, args: { filename: string; content_base64: string; mime_type?: string }): Promise<PlanDraft> {
+	const op = requireOperation("upload_knowledge_base_file");
+	const blocked = hardBlocked(op, env as { HARD_BLOCKED_OPERATIONS?: string });
+	if (blocked) throw new PlanRejected(blocked);
+	let file: ReturnType<typeof parseUploadFile>;
+	try {
+		file = parseUploadFile({ file: args });
+	} catch (e) {
+		throw new PlanRejected((e as Error).message);
+	}
+	const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(file.bytes).buffer);
+	const sha256 = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+	const risk = assessRisk(op, undefined);
+	return {
+		kind: op.id,
+		summary: [`Operación: ${op.id} · ${op.summary}`, `${op.method} ${op.host}${op.path}`, `Fichero: ${file.filename} (${file.bytes.length} bytes, ${file.mimeType}, SHA-256 ${sha256})`],
+		elevated: risk.elevated,
+		warnings: risk.warnings,
+		action: { type: "api_calls", steps: [{ op: op.id, label: op.summary, body: { file: { filename: file.filename, content_base64: args.content_base64, mime_type: file.mimeType } } }], continueOnError: false, stateChecks: [] },
+	};
 }
 
 /** Lee el estado del objeto que se va a tocar (si aplica): ANTES para el resumen y hash para apply_plan. */

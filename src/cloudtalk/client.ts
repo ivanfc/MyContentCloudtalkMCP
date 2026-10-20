@@ -1,5 +1,7 @@
 import { ALLOWED_HOSTS, type Operation, getOperation } from "./catalog";
 import { CloudTalkError, errorFromStatus } from "./errors";
+import { MAX_FILE_BYTES, parseUploadFile } from "./binary";
+import { b64 } from "../util/crypto";
 
 export const CLOUDTALK_TIMEOUT_MS = 15_000;
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
@@ -41,6 +43,17 @@ export interface CallResult {
 	rate?: RateInfo;
 }
 
+export interface AudioData {
+	kind: "audio";
+	data: string;
+	mimeType: "audio/wav";
+	bytes: number;
+}
+
+export function isAudioData(data: unknown): data is AudioData {
+	return !!data && typeof data === "object" && (data as AudioData).kind === "audio";
+}
+
 /** Valor de parámetro de ruta seguro: sin barras, puntos relativos ni espacios. */
 const SAFE_SEGMENT = /^[A-Za-z0-9_.:@+=-]{1,128}$/;
 
@@ -77,6 +90,34 @@ async function readLimited(res: Response): Promise<string> {
 	const text = await res.text();
 	if (text.length > MAX_BODY_BYTES) throw new CloudTalkError("TOO_LARGE", "service", "La respuesta de CloudTalk es demasiado grande (>5 MB). Pide menos elementos (limit) o filtra más.");
 	return text;
+}
+
+async function readLimitedAudio(res: Response): Promise<Uint8Array> {
+	const len = Number(res.headers.get("content-length") ?? "0");
+	if (len > MAX_FILE_BYTES) throw new CloudTalkError("TOO_LARGE", "service", "La grabación supera el límite de 5 MB del conector.");
+	if (!res.body) throw new CloudTalkError("BAD_AUDIO", "service", "CloudTalk devolvió una grabación vacía.");
+	const reader = res.body.getReader();
+	const chunks: Uint8Array[] = [];
+	let size = 0;
+	try {
+		for (;;) {
+			const { value, done } = await reader.read();
+			if (done) break;
+			size += value.byteLength;
+			if (size > MAX_FILE_BYTES) throw new CloudTalkError("TOO_LARGE", "service", "La grabación supera el límite de 5 MB del conector.");
+			chunks.push(value);
+		}
+	} catch (e) {
+		await reader.cancel().catch(() => undefined);
+		throw e;
+	}
+	const bytes = new Uint8Array(size);
+	let offset = 0;
+	for (const chunk of chunks) {
+		bytes.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return bytes;
 }
 
 function rateInfo(h: Headers): RateInfo | undefined {
@@ -122,17 +163,31 @@ export class CloudTalkClient {
 		const isRead = op.method === "GET";
 		const attempt = async (): Promise<CallResult> => {
 			await this.opts.beforeRequest?.();
-			const headers: Record<string, string> = { Authorization: basicAuth(this.creds), Accept: "application/json", "User-Agent": USER_AGENT };
-			let body: string | undefined;
+			const audio = op.id === "calls_recording";
+			const headers: Record<string, string> = { Authorization: basicAuth(this.creds), Accept: audio ? "audio/x-wav" : "application/json", "User-Agent": USER_AGENT };
+			let body: string | FormData | undefined;
 			if (input.body !== undefined) {
-				headers["Content-Type"] = "application/json";
-				body = JSON.stringify(input.body);
+				if (op.id === "upload_knowledge_base_file") {
+					const file = parseUploadFile(input.body);
+					const form = new FormData();
+					form.append("file", new Blob([new Uint8Array(file.bytes).buffer], { type: file.mimeType }), file.filename);
+					body = form;
+				} else {
+					headers["Content-Type"] = "application/json";
+					body = JSON.stringify(input.body);
+				}
 			}
 			const res = await this.f(url, { method: op.method, headers, body, redirect: "manual", signal: AbortSignal.timeout(this.opts.timeoutMs ?? CLOUDTALK_TIMEOUT_MS) });
 			const rate = rateInfo(res.headers);
 			if (rate) this.lastRate = rate;
 			if (res.status >= 300 && res.status < 400) throw new CloudTalkError("REDIRECT", "service", `CloudTalk respondió con una redirección (HTTP ${res.status}); no se sigue por seguridad.`, res.status);
 			const ctype = res.headers.get("content-type") ?? "";
+			if (audio && res.ok && /audio\/(?:x-)?wav|application\/octet-stream/i.test(ctype)) {
+				const bytes = await readLimitedAudio(res);
+				if (bytes.length < 12 || !["RIFF", "RF64"].includes(String.fromCharCode(...bytes.subarray(0, 4))) || String.fromCharCode(...bytes.subarray(8, 12)) !== "WAVE")
+					throw new CloudTalkError("BAD_AUDIO", "service", "CloudTalk no devolvió un fichero WAV válido.");
+				return { status: res.status, data: { kind: "audio", data: b64(bytes), mimeType: "audio/wav", bytes: bytes.length } satisfies AudioData, ...(rate ? { rate } : {}) };
+			}
 			const text = await readLimited(res);
 			let parsed: unknown = text;
 			if (text && (ctype.includes("json") || /^[\s]*[[{]/.test(text))) {
@@ -148,6 +203,7 @@ export class CloudTalkClient {
 				throw errorFromStatus(429, parsed, waitS);
 			}
 			if (res.status >= 400) throw errorFromStatus(res.status, parsed);
+			if (audio && !ctype.includes("json")) throw new CloudTalkError("BAD_AUDIO", "service", "CloudTalk no devolvió audio WAV válido.");
 			const data = unwrap(parsed);
 			// La API core puede devolver el error dentro del sobre con HTTP 200.
 			const inner = data && typeof data === "object" && !Array.isArray(data) ? (data as Record<string, unknown>) : undefined;
@@ -173,7 +229,7 @@ export class CloudTalkClient {
 	}
 
 	private retryable(e: unknown): boolean {
-		if (e instanceof CloudTalkError) return e.category === "rate_limit" || (e.category === "service" && e.code !== "TOO_LARGE" && e.code !== "REDIRECT");
+		if (e instanceof CloudTalkError) return e.category === "rate_limit" || (e.category === "service" && !["TOO_LARGE", "REDIRECT", "BAD_AUDIO"].includes(e.code));
 		const name = (e as { name?: string })?.name;
 		return name === "TypeError" || name === "TimeoutError" || name === "AbortError";
 	}

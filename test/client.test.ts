@@ -58,6 +58,13 @@ describe("cliente CloudTalk", () => {
 		await expect(fake.client().call("ai_calls_topics", { path: { callId: 1 } })).rejects.toMatchObject({ category: "not_found" });
 	});
 
+	it("grabación WAV inválida se rechaza sin repetir la lectura", async () => {
+		const fake = new FakeCloudTalk();
+		fake.override["GET /api/calls/recording/1.json"] = () => new Response("not-wav", { headers: { "content-type": "audio/x-wav" } });
+		await expect(fake.client().call("calls_recording", { path: { callId: 1 } })).rejects.toMatchObject({ code: "BAD_AUDIO" });
+		expect(fake.calls).toHaveLength(1);
+	});
+
 	it("la cuota se consulta antes de cada petición y puede cortar", async () => {
 		const fake = new FakeCloudTalk();
 		let n = 0;

@@ -20,6 +20,7 @@ const TOOLS = [
 	"get_capabilities",
 	"get_quota_usage",
 	"plan_api_call",
+	"plan_upload_knowledge_base_file",
 	"plan_create_contact",
 	"plan_update_contact",
 	"plan_send_sms",
@@ -49,14 +50,14 @@ async function connect(fake: FakeCloudTalk, env: Record<string, unknown> = { ALL
 }
 
 describe("contrato MCP real (cliente y servidor del SDK)", () => {
-	it("publica las 22 herramientas con anotaciones coherentes", async () => {
+	it("publica las 23 herramientas con anotaciones coherentes", async () => {
 		const { client, tools } = await connect(new FakeCloudTalk());
 		try {
 			const { tools: list } = await client.listTools();
 			expect(list.map((t) => t.name).sort()).toEqual([...TOOLS].sort());
 			const by = Object.fromEntries(list.map((t) => [t.name, t.annotations]));
 			for (const n of ["api_read", "get_call_report", "find_contacts", "describe_api_operation", "preview_plan"]) expect(by[n]?.readOnlyHint, n).toBe(true);
-			for (const n of ["plan_api_call", "apply_plan", "disconnect_cloudtalk"]) expect(by[n]?.readOnlyHint, n).toBe(false);
+			for (const n of ["plan_api_call", "plan_upload_knowledge_base_file", "apply_plan", "disconnect_cloudtalk"]) expect(by[n]?.readOnlyHint, n).toBe(false);
 			expect(by.apply_plan?.destructiveHint).toBe(true);
 		} finally {
 			await client.close();
@@ -77,7 +78,12 @@ describe("contrato MCP real (cliente y servidor del SDK)", () => {
 			expect(read.json).toMatchObject({ returned: 2, items: [{ id: "42" }, { id: "43" }] });
 			expect((await call("api_read", { operation: "tags_add" })).json.message).toMatch(/escritura/);
 			expect((await call("api_read", { operation: "calls_index", query: { foo: 1 } })).isError).toBe(true);
-			expect((await call("api_read", { operation: "calls_recording", path_params: { callId: 1 } })).json.message).toMatch(/binario/);
+			const wav = new Uint8Array([82, 73, 70, 70, 4, 0, 0, 0, 87, 65, 86, 69]);
+			fake.override["GET /api/calls/recording/1.json"] = () => new Response(wav, { headers: { "content-type": "audio/x-wav" } });
+			const recording = await client.callTool({ name: "api_read", arguments: { operation: "calls_recording", path_params: { callId: 1 } } });
+			const recordingContent = recording.content as Array<Record<string, unknown>>;
+			expect(recordingContent[0]).toMatchObject({ type: "text", text: expect.stringContaining('"bytes":12') });
+			expect(recordingContent[1]).toMatchObject({ type: "audio", mimeType: "audio/wav", data: btoa(String.fromCharCode(...wav)) });
 
 			const p = await call("plan_api_call", { operation: "tags_add", body: { name: "Caliente" } });
 			expect(p.json).toMatchObject({ ok: true, confirm_with: expect.stringMatching(/^APPLY p_/) });
@@ -87,6 +93,33 @@ describe("contrato MCP real (cliente y servidor del SDK)", () => {
 			fake.calls.length = 0;
 			const ap = await call("apply_plan", { plan_id: p.json.plan_id, confirm: p.json.confirm_with });
 			expect(ap.json).toMatchObject({ ok: true, results: [{ created_id: "77" }] });
+		} finally {
+			await client.close();
+			await tools.server.close();
+		}
+	});
+
+	it("sube un fichero por multipart con plan cifrado y sin devolver el base64 al chat", async () => {
+		const fake = new FakeCloudTalk();
+		fake.override["POST /v1/knowledge-bases/files"] = () => Response.json({ id: "kb-test" }, { status: 201 });
+		const { client, tools, call } = await connect(fake);
+		const content = "contenido de prueba privado";
+		const encoded = btoa(content);
+		try {
+			const d = await call("describe_api_operation", { operation: "upload_knowledge_base_file" });
+			expect(d.json.use_with).toBe("plan_upload_knowledge_base_file");
+			const p = await call("plan_upload_knowledge_base_file", { filename: "prueba.txt", content_base64: encoded, mime_type: "text/plain" });
+			expect(p.json).toMatchObject({ ok: true, confirm_with: expect.stringMatching(/^APPLY-ELEVATED p_/) });
+			expect(JSON.stringify(p.json)).not.toContain(encoded);
+			const preview = await call("preview_plan", { plan_id: p.json.plan_id });
+			expect(JSON.stringify(preview.json)).not.toContain(encoded);
+			const applied = await call("apply_plan", { plan_id: p.json.plan_id, confirm: p.json.confirm_with });
+			expect(applied.json).toMatchObject({ ok: true, results: [{ created_id: "kb-test" }] });
+			const sent = fake.calls.find((x) => x.url.endsWith("/knowledge-bases/files"))?.body as FormData;
+			const file = sent.get("file") as File;
+			expect(file.name).toBe("prueba.txt");
+			expect(file.type).toBe("text/plain");
+			expect(await file.text()).toBe(content);
 		} finally {
 			await client.close();
 			await tools.server.close();
@@ -110,7 +143,7 @@ describe("contrato MCP real (cliente y servidor del SDK)", () => {
 			expect(sms).toMatchObject({ isError: true, json: { ok: false, stage: "guards" } });
 			const caps = await call("get_capabilities");
 			expect(caps.json.api).toMatchObject({ operations: 107 });
-			expect(caps.json.not_executable.map((x: { operation: string }) => x.operation).sort()).toEqual(["calls_recording", "upload_knowledge_base_file"]);
+			expect(caps.json.not_executable).toEqual([]);
 		} finally {
 			await client.close();
 			await tools.server.close();

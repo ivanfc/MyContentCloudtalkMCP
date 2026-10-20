@@ -23,8 +23,8 @@ describe("catálogo generado del OpenAPI oficial", () => {
 		}
 	});
 
-	it("marca como no ejecutables solo la subida de ficheros y el audio binario", () => {
-		expect(CATALOG.operations.filter((o) => unsupportedReason(o)).map((o) => o.id).sort()).toEqual(["calls_recording", "upload_knowledge_base_file"]);
+	it("no deja operaciones oficiales sin ruta de ejecución", () => {
+		expect(CATALOG.operations.filter((o) => unsupportedReason(o)).map((o) => o.id).sort()).toEqual([]);
 	});
 
 	it("busca por palabras y explica operaciones inexistentes con sugerencias", () => {
